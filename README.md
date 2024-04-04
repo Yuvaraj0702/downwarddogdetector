@@ -2,7 +2,7 @@
 
 This application allows you to place an image of a yoga pose and the app will provide feedback as to whether the downward dog position is being done correctly.
 This application is hosted on firebase and this is the link
-[Downward dog detector] (https://downward-dog-b081e.web.app/)
+[Downward dog detector](https://downward-dog-b081e.web.app/)
 
 ## Local hosting instructions
 
