@@ -207,13 +207,32 @@ function App() {
   
     return angle;
   };
+  const isLegsNotCrossed = (pose) => {
+  const leftAnkle = pose.keypoints.find(keypoint => keypoint.name === 'left_ankle');
+  const rightAnkle = pose.keypoints.find(keypoint => keypoint.name === 'right_ankle');
+
+  if (!leftAnkle || !rightAnkle) {
+    return 0; // Unable to determine leg positions if ankle keypoints are missing
+  }
+
+  // Calculate the difference in Y coordinates between the ankles
+  const deltaY = Math.abs(leftAnkle.y - rightAnkle.y);
+
+  // If the difference is above a certain threshold, legs are considered crossed
+    return deltaY;
+  };
+  
   
   
   
 
   const renderPoseFeedback = (pose) => {
     const feedback = [];
-
+    feedback.push(
+      <li key="legs crossed" style={positiveFeedbackStyle}>
+       Ankles are {isLegsNotCrossed(pose)} away from each other vertically if this value is high it may indicate the legs are crossed. This value should be less than 10
+      </li>
+    );
 
       feedback.push(
         <li key="neckAlignment" style={positiveFeedbackStyle}>
