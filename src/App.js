@@ -2,18 +2,22 @@
 import React, { useState } from 'react';
 import { detectPose } from './utils/movenetUtils';
 import Dropzone from 'react-dropzone';
+import { FaSpinner } from 'react-icons/fa';
 
 function App() {
   const [image, setImage] = useState(null);
   const [pose, setPose] = useState(null);
+  const [isLoading, setIsLoading] = useState(false); // Add loading state
 
   const onDrop = async (acceptedFiles) => {
     const file = acceptedFiles[0];
     const imageData = await readFileAsDataURL(file);
     setImage(imageData);
+    setIsLoading(true); // Set loading state to true
 
     const pose = await detectPose(imageData);
     setPose(pose);
+    setIsLoading(false); // Set loading state to false after model processing
   };
 
   const readFileAsDataURL = (file) =>
@@ -181,6 +185,29 @@ function App() {
   
     return rightEar.x > rightKnee.x && leftEar.x > leftKnee.x;
   };
+
+  const calculateShoulderElbowWristAngle = (pose) => {
+    let shoulder, elbow, wrist;
+    if (rightFacing(pose)) {
+      shoulder = pose.keypoints.find(keypoint => keypoint.name === 'right_shoulder');
+      elbow = pose.keypoints.find(keypoint => keypoint.name === 'right_elbow');
+      wrist = pose.keypoints.find(keypoint => keypoint.name === 'right_wrist');
+    } else {
+      shoulder = pose.keypoints.find(keypoint => keypoint.name === 'left_shoulder');
+      elbow = pose.keypoints.find(keypoint => keypoint.name === 'left_elbow');
+      wrist = pose.keypoints.find(keypoint => keypoint.name === 'left_wrist');
+    }
+  
+    if (!shoulder || !elbow || !wrist) {
+      return 0; // One or more keypoints not found
+    }
+  
+    // Calculate angle between shoulder, elbow, and wrist
+    const angle = calculateAngle(shoulder, elbow, wrist);
+  
+    return angle;
+  };
+  
   
   
 
@@ -190,77 +217,27 @@ function App() {
 
       feedback.push(
         <li key="neckAlignment" style={positiveFeedbackStyle}>
-         head tilt is {isNeckTiltAngleApprox90Degrees(pose)} ideal is 0 degrees
+         head tilt is {isNeckTiltAngleApprox90Degrees(pose).toFixed(2)} ideal is 30 degrees
         </li>
       );
 
       feedback.push(
         <li key="shoulderHipKneeAlignment" style={positiveFeedbackStyle}>
-          shoulder hip knee angle is {isShoulderHipKneeAngleRight(pose)} ideal is 90 degrees
+          shoulder hip knee angle is {isShoulderHipKneeAngleRight(pose).toFixed(2)} ideal is 90 degrees
         </li>
       );
       
       feedback.push(
         <li key="hipKneeFootAlignment" style={positiveFeedbackStyle}>
-          hip knee foot angle is {isHipKneeFootAngleRight(pose)} ideal is 90 degrees
+          hip knee foot angle is {isHipKneeFootAngleRight(pose).toFixed(2)} ideal is 90 degrees
         </li>
       );
 
-    // if (isHipKneeFootAngleRight(pose)) {
-    //   feedback.push(
-    //     <li key="hipKneeFootAngle" style={positiveFeedbackStyle}>
-    //       Hip-Knee-Foot angle is approximately 90 degrees. Good job!
-    //     </li>
-    //   );
-    // } else {
-    //   feedback.push(
-    //     <li key="hipKneeFootAngle" style={negativeFeedbackStyle}>
-    //       Please ensure that your hip-knee-foot angle is approximately 90 degrees.
-    //     </li>
-    //   );
-    // }
-
-    // if (isShoulderHipKneeAngleRight(pose)) {
-    //   feedback.push(
-    //     <li key="shoulderHipKneeAngle" style={positiveFeedbackStyle}>
-    //       Shoulder-Hip-Knee angle is approximately 90 degrees. Good job!
-    //     </li>
-    //   );
-    // } else {
-    //   feedback.push(
-    //     <li key="shoulderHipKneeAngle" style={negativeFeedbackStyle}>
-    //       Please ensure that your shoulder-hip-knee angle is approximately 90 degrees.
-    //     </li>
-    //   );
-    // }
-
-    // if (isHipAboveFoot(pose)) {
-    //   feedback.push(
-    //     <li key="hipAboveFoot" style={positiveFeedbackStyle}>
-    //       Hips are above feet. Good job!
-    //     </li>
-    //   );
-    // } else {
-    //   feedback.push(
-    //     <li key="hipAboveFoot" style={negativeFeedbackStyle}>
-    //       Please raise your hips above feet level.
-    //     </li>
-    //   );
-    // }
-
-    // if (isHeadBelowHip(pose)) {
-    //   feedback.push(
-    //     <li key="headBelowHip" style={positiveFeedbackStyle}>
-    //       Head is above hip level. You're doing a good job.
-    //     </li>
-    //   );
-    // } else {
-    //   feedback.push(
-    //     <li key="headBelowHip" style={negativeFeedbackStyle}>
-    //       Place your palms on the floor and bend forward.
-    //     </li>
-    //   );
-    // }
+      feedback.push(
+        <li key="shoulderElbowWristAlignment" style={positiveFeedbackStyle}>
+          Shoulder Elbow wrist angle is {calculateShoulderElbowWristAngle(pose).toFixed(2)} ideal is 110 degrees
+        </li>
+      );
 
     if (areFeetPlanted(pose)) {
       feedback.push(
@@ -293,20 +270,6 @@ function App() {
     return feedback;
   };
 
-  const isHipAboveFoot = (pose) => {
-    const hip = pose.keypoints.find(keypoint => keypoint.name === 'left_hip' || keypoint.name === 'right_hip');
-    const foot = pose.keypoints.find(keypoint => keypoint.name === 'left_ankle' || keypoint.name === 'right_ankle');
-
-    return hip && foot && hip.y < foot.y;
-  };
-
-  const isHeadBelowHip = (pose) => {
-    const head = pose.keypoints.find(keypoint => keypoint.name === 'nose' || keypoint.name === 'left_eye' || keypoint.name === 'right_eye');
-    const hip = pose.keypoints.find(keypoint => keypoint.name === 'left_hip' || keypoint.name === 'right_hip');
-
-    return (head && hip && head.y < hip.y);
-  };
-
   const areFeetPlanted = (pose) => {
     const leftFoot = pose.keypoints.find(keypoint => keypoint.name === 'left_ankle');
     const rightFoot = pose.keypoints.find(keypoint => keypoint.name === 'right_ankle');
@@ -329,7 +292,8 @@ function App() {
           <section>
             <div {...getRootProps()} style={dropzoneStyle}>
               <input {...getInputProps()} />
-              <p style={dropzoneTextStyle}>Drag 'n' drop an image here, or click to select one</p>
+              
+                <p style={dropzoneTextStyle}>Drag 'n' drop an image here, or click to select one</p>
             </div>
           </section>
         )}
@@ -340,12 +304,18 @@ function App() {
           <img src={image} alt="Uploaded" style={imageStyle} />
         </div>
       )}
-      {pose && (
-        <div style={poseResultContainerStyle}>
-          <h2 style={poseResultTitleStyle}>Pose Detection Results</h2>
-          {parsePose(pose)}
-        </div>
-      )}
+      <div style={poseResultContainerStyle}>
+        {isLoading ? ( // Display spinner if isLoading is true
+          <div style={{ textAlign: 'center' }}>
+            <FaSpinner className="spinner" />
+          </div>
+        ) : (
+          <>
+            <h2 style={poseResultTitleStyle}>Pose Detection Results</h2>
+            {pose && parsePose(pose)} {/* Render pose if it's available */}
+          </>
+        )}
+      </div>
     </div>
   );
 }
