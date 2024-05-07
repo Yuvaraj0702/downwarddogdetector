@@ -40,36 +40,227 @@ function App() {
     ));
   };
 
+  const isPersonFacingLeft = (pose) => {
+    const leftShoulder = pose.keypoints.find(keypoint => keypoint.name === 'left_shoulder');
+    const rightShoulder = pose.keypoints.find(keypoint => keypoint.name === 'right_shoulder');
+    const leftHip = pose.keypoints.find(keypoint => keypoint.name === 'left_hip');
+    const rightHip = pose.keypoints.find(keypoint => keypoint.name === 'right_hip');
+  
+    if (!leftShoulder || !rightShoulder || !leftHip || !rightHip) {
+      return false; // One or more keypoints not found
+    }
+  
+    // Calculate the angle between the line connecting the shoulders and the line connecting the hips
+    const deltaYShoulders = rightShoulder.y - leftShoulder.y;
+    const deltaXShoulders = rightShoulder.x - leftShoulder.x;
+    const shoulderAngle = Math.atan2(deltaYShoulders, deltaXShoulders) * (180 / Math.PI);
+  
+    const deltaYHips = rightHip.y - leftHip.y;
+    const deltaXHips = rightHip.x - leftHip.x;
+    const hipAngle = Math.atan2(deltaYHips, deltaXHips) * (180 / Math.PI);
+  
+    // If the shoulders are more elevated than the hips, the person is facing left
+    return shoulderAngle > hipAngle;
+  };
+  
+  const isPersonFacingRight = (pose) => !isPersonFacingLeft(pose);
+  
+
+  const calculateAngle = (point1, point2, point3) => {
+    const radians = Math.atan2(point3.y - point2.y, point3.x - point2.x) - Math.atan2(point1.y - point2.y, point1.x - point2.x);
+    let angle = radians * (180 / Math.PI);
+    angle = Math.abs(angle);
+    return angle > 180 ? 360 - angle : angle;
+  };
+
+  // Add a function to check if shoulder-hip-knee angle is approximately 90 degrees
+  const isShoulderHipKneeAngleRight = (pose) => {
+    const leftShoulder = pose.keypoints.find(keypoint => keypoint.name === 'left_shoulder');
+    const rightShoulder = pose.keypoints.find(keypoint => keypoint.name === 'right_shoulder');
+    const leftHip = pose.keypoints.find(keypoint => keypoint.name === 'left_hip');
+    const rightHip = pose.keypoints.find(keypoint => keypoint.name === 'right_hip');
+    const leftKnee = pose.keypoints.find(keypoint => keypoint.name === 'left_knee');
+    const rightKnee = pose.keypoints.find(keypoint => keypoint.name === 'right_knee');
+  
+    if (!leftShoulder || !rightShoulder || !leftHip || !rightHip || !leftKnee || !rightKnee) {
+      return 0; // One or more keypoints not found
+    }
+  
+    const shoulderHipKneeAngleLeft = calculateAngle(leftShoulder, leftHip, leftKnee);
+    const shoulderHipKneeAngleRight = calculateAngle(rightShoulder, rightHip, rightKnee);
+  
+    // Depending on which side the person is facing, use the appropriate angle for comparison
+    if (isPersonFacingLeft(pose)) {
+      return shoulderHipKneeAngleLeft;
+    } else {
+      return shoulderHipKneeAngleRight;
+    }
+  };
+  
+  const isHipKneeFootAngleRight = (pose) => {
+    const leftHip = pose.keypoints.find(keypoint => keypoint.name === 'left_hip');
+    const rightHip = pose.keypoints.find(keypoint => keypoint.name === 'right_hip');
+    const leftKnee = pose.keypoints.find(keypoint => keypoint.name === 'left_knee');
+    const rightKnee = pose.keypoints.find(keypoint => keypoint.name === 'right_knee');
+    const leftAnkle = pose.keypoints.find(keypoint => keypoint.name === 'left_ankle');
+    const rightAnkle = pose.keypoints.find(keypoint => keypoint.name === 'right_ankle');
+  
+    if (!leftHip || !rightHip || !leftKnee || !rightKnee || !leftAnkle || !rightAnkle) {
+      return false; // One or more keypoints not found
+    }
+  
+    // Depending on which side the person is facing, use the appropriate angle for comparison
+    if (isPersonFacingLeft(pose)) {
+      return calculateAngle(leftHip, leftKnee, leftAnkle);;
+    } else {
+      return calculateAngle(rightHip, rightKnee, rightAnkle);
+    }
+  };
+  
+  const calculateNeckPoint = (pose) => {
+    const leftEar = pose.keypoints.find(keypoint => keypoint.name === 'left_ear');
+    const rightEar = pose.keypoints.find(keypoint => keypoint.name === 'right_ear');
+    const leftShoulder = pose.keypoints.find(keypoint => keypoint.name === 'left_shoulder');
+    const rightShoulder = pose.keypoints.find(keypoint => keypoint.name === 'right_shoulder');
+  
+    if (!leftEar || !rightEar || !leftShoulder || !rightShoulder) {
+      return null; // Return null if any of the required keypoints are missing
+    }
+  
+    let neckX, neckY;
+  
+    // Check if the person is facing left or right
+    if (leftEar.x < rightEar.x) {
+      // Person is facing right
+      neckX = (leftEar.x + leftShoulder.x) / 2;
+      neckY = (leftEar.y + leftShoulder.y) / 2;
+    } else {
+      // Person is facing left
+      neckX = (rightEar.x + rightShoulder.x) / 2;
+      neckY = (rightEar.y + rightShoulder.y) / 2;
+    }
+  
+    return { x: neckX, y: neckY };
+  };
+  
+  
+  const isNeckTiltAngleApprox90Degrees = (pose) => {
+    const nose = pose.keypoints.find(keypoint => keypoint.name === 'nose');
+    const neckPoint = calculateNeckPoint(pose); // Using the calculated neck point
+  
+    if (!nose || !neckPoint) {
+      return 0; // One or both keypoints not found
+    }
+  
+    // Calculate the angle between the line connecting the nose and the neck point and the vertical axis
+    const deltaY = nose.y - neckPoint.y; // Reversed order to get angle relative to vertical axis
+    const deltaX = neckPoint.x - nose.x; // No change in order
+    let angleRadians = Math.atan2(deltaY, deltaX);
+    let angleDegrees = angleRadians * (180 / Math.PI);
+  
+    // Normalize angle to be between 0 and 180 degrees
+    angleDegrees = (angleDegrees + 180) % 180;
+  
+    // Adjust angle if facing right side
+    if (rightFacing(pose)) {
+      angleDegrees = 180 - angleDegrees;
+    }
+  
+    return angleDegrees; // Return the actual angle
+  };
+  
+  const rightFacing = (pose) => {
+    const leftEar = pose.keypoints.find(keypoint => keypoint.name === 'left_ear');
+    const rightEar = pose.keypoints.find(keypoint => keypoint.name === 'right_ear');
+    const leftKnee = pose.keypoints.find(keypoint => keypoint.name === 'left_knee');
+    const rightKnee = pose.keypoints.find(keypoint => keypoint.name === 'right_knee');
+  
+    if (!leftEar || !rightEar || !leftKnee || !rightKnee) {
+      return false; // Unable to determine facing direction if any required keypoints are missing
+    }
+  
+    return rightEar.x > rightKnee.x && leftEar.x > leftKnee.x;
+  };
+  
+  
+
   const renderPoseFeedback = (pose) => {
     const feedback = [];
 
-    if (isHipAboveFoot(pose)) {
-      feedback.push(
-        <li key="hipAboveFoot" style={positiveFeedbackStyle}>
-          Hips are above feet. Good job!
-        </li>
-      );
-    } else {
-      feedback.push(
-        <li key="hipAboveFoot" style={negativeFeedbackStyle}>
-          Please raise your hips above feet level.
-        </li>
-      );
-    }
 
-    if (isHeadBelowHip(pose)) {
       feedback.push(
-        <li key="headBelowHip" style={positiveFeedbackStyle}>
-          Head is below hip level. You're doing a good job.
+        <li key="neckAlignment" style={positiveFeedbackStyle}>
+         head tilt is {isNeckTiltAngleApprox90Degrees(pose)} ideal is 0 degrees
         </li>
       );
-    } else {
+
       feedback.push(
-        <li key="headBelowHip" style={negativeFeedbackStyle}>
-          Place your palms on the floor and bend forward.
+        <li key="shoulderHipKneeAlignment" style={positiveFeedbackStyle}>
+          shoulder hip knee angle is {isShoulderHipKneeAngleRight(pose)} ideal is 90 degrees
         </li>
       );
-    }
+      
+      feedback.push(
+        <li key="hipKneeFootAlignment" style={positiveFeedbackStyle}>
+          hip knee foot angle is {isHipKneeFootAngleRight(pose)} ideal is 90 degrees
+        </li>
+      );
+
+    // if (isHipKneeFootAngleRight(pose)) {
+    //   feedback.push(
+    //     <li key="hipKneeFootAngle" style={positiveFeedbackStyle}>
+    //       Hip-Knee-Foot angle is approximately 90 degrees. Good job!
+    //     </li>
+    //   );
+    // } else {
+    //   feedback.push(
+    //     <li key="hipKneeFootAngle" style={negativeFeedbackStyle}>
+    //       Please ensure that your hip-knee-foot angle is approximately 90 degrees.
+    //     </li>
+    //   );
+    // }
+
+    // if (isShoulderHipKneeAngleRight(pose)) {
+    //   feedback.push(
+    //     <li key="shoulderHipKneeAngle" style={positiveFeedbackStyle}>
+    //       Shoulder-Hip-Knee angle is approximately 90 degrees. Good job!
+    //     </li>
+    //   );
+    // } else {
+    //   feedback.push(
+    //     <li key="shoulderHipKneeAngle" style={negativeFeedbackStyle}>
+    //       Please ensure that your shoulder-hip-knee angle is approximately 90 degrees.
+    //     </li>
+    //   );
+    // }
+
+    // if (isHipAboveFoot(pose)) {
+    //   feedback.push(
+    //     <li key="hipAboveFoot" style={positiveFeedbackStyle}>
+    //       Hips are above feet. Good job!
+    //     </li>
+    //   );
+    // } else {
+    //   feedback.push(
+    //     <li key="hipAboveFoot" style={negativeFeedbackStyle}>
+    //       Please raise your hips above feet level.
+    //     </li>
+    //   );
+    // }
+
+    // if (isHeadBelowHip(pose)) {
+    //   feedback.push(
+    //     <li key="headBelowHip" style={positiveFeedbackStyle}>
+    //       Head is above hip level. You're doing a good job.
+    //     </li>
+    //   );
+    // } else {
+    //   feedback.push(
+    //     <li key="headBelowHip" style={negativeFeedbackStyle}>
+    //       Place your palms on the floor and bend forward.
+    //     </li>
+    //   );
+    // }
 
     if (areFeetPlanted(pose)) {
       feedback.push(
@@ -88,7 +279,7 @@ function App() {
     if (feedback.every(item => item.props.style.color === 'green')) {
       feedback.push(
         <li key="poseCompleted" style={positiveFeedbackStyle}>
-          Downward dog position completed successfully.
+          Seated posture is good.
         </li>
       );
     } else {
@@ -113,7 +304,7 @@ function App() {
     const head = pose.keypoints.find(keypoint => keypoint.name === 'nose' || keypoint.name === 'left_eye' || keypoint.name === 'right_eye');
     const hip = pose.keypoints.find(keypoint => keypoint.name === 'left_hip' || keypoint.name === 'right_hip');
 
-    return !(head && hip && head.y < hip.y);
+    return (head && hip && head.y < hip.y);
   };
 
   const areFeetPlanted = (pose) => {
@@ -132,7 +323,7 @@ function App() {
 
   return (
     <div style={containerStyle}>
-      <h1 style={headerStyle}>Downward Dog Detection</h1>
+      <h1 style={headerStyle}>Posture Detection</h1>
       <Dropzone onDrop={onDrop} accept="image/*">
         {({ getRootProps, getInputProps }) => (
           <section>
@@ -161,7 +352,7 @@ function App() {
 
 const containerStyle = {
   fontFamily: 'Arial, sans-serif',
-  textAlign: 'center',
+  textAlign: 'left',
   padding: '20px',
   backgroundColor: '#f5f5f5', // Light background color
 };
