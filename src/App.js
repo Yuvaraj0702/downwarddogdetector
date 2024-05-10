@@ -1,7 +1,8 @@
 // App.js
 import React, { useState } from 'react';
 import { detectPose } from './utils/movenetUtils';
-import * as cocoSsd from '@tensorflow-models/coco-ssd';
+import * as mobilenet from '@tensorflow-models/mobilenet';
+import * as handpose from '@tensorflow-models/handpose';
 import Dropzone from 'react-dropzone';
 import { FaSpinner } from 'react-icons/fa';
 
@@ -106,6 +107,7 @@ function applyDilation(canvas) {
 function App() {
   const [image, setImage] = useState(null);
   const [pose, setPose] = useState(null);
+  const [handPoses, setHandPoses] = useState(null);
   const [objects, setObjects] = useState([]);
   const [isLoading, setIsLoading] = useState(false); // Add loading state
 
@@ -123,17 +125,63 @@ function App() {
     const objects = await detectObjects(imageData);
     setObjects(objects);
 
+    const handPoses = await detectHandPoses(preprocessedImageData); // Detect hand poses
+    setHandPoses(handPoses); // Set hand poses state
+
+    setIsLoading(false);
+  };
+
+  const onDifferentDrop = async (acceptedFiles) => {
+    const file = acceptedFiles[0];
+    const imageData = await readFileAsDataURL(file);
+    setImage(imageData);
+    setIsLoading(true); // Set loading state to true
+
+    const preprocessedImageData = await preprocessImage(imageData);
+
+    const pose = await detectPose(preprocessedImageData);
+    setPose(pose);
+
+    const objects = await detectObjects(imageData);
+    setObjects(objects);
+
     setIsLoading(false);
   };
 
   const detectObjects = async (imageData) => {
-    const imageElement = document.createElement('img');
-    imageElement.src = imageData;
+    try {
+      const imageElement = document.createElement('img');
+      imageElement.src = imageData;
 
-    const model = await cocoSsd.load();
-    const predictions = await model.detect(imageElement);
+      const model = await mobilenet.load();
+      console.log('Model loaded successfully');
 
-    return predictions;
+      const predictions = await model.classify(imageElement);
+      console.log('Predictions:', predictions);
+
+      return predictions;
+    } catch (error) {
+      console.error('Error detecting objects:', error);
+      return [];
+    }
+  };
+  const detectHandPoses = async (imageData) => {
+    try {
+      const imageElement = document.createElement('img');
+      imageElement.src = imageData;
+
+      // Load the hand pose detection model
+      const model = await handpose.load();
+
+      // Detect hand poses in the preprocessed image
+      const predictions = await model.estimateHands(imageData);
+
+      // Return the detected hand poses
+      return predictions;
+    } catch (error) {
+      console.error('Error detecting hand poses:', error);
+      return [];
+    }
   };
 
   const readFileAsDataURL = (file) =>
@@ -343,6 +391,7 @@ function App() {
 
   const renderPoseFeedback = (pose) => {
     const feedback = [];
+    const isFacingRight = !isPersonFacingLeft(pose);
 
     pose.keypoints.forEach((keypoint, index) => {
       if (keypoint.score < 0.2) {
@@ -368,11 +417,17 @@ function App() {
         </td>
         <td>
           {/* Add comment about confidence level if below 0.2 */}
-          {pose.keypoints.some(keypoint => keypoint.name === 'nose' && keypoint.score < 0.2) ||
-            pose.keypoints.some(keypoint => keypoint.name === 'left_ear' && keypoint.score < 0.2) ||
+          {isFacingRight && (pose.keypoints.some(keypoint => keypoint.name === 'nose' && keypoint.score < 0.2) ||
+            pose.keypoints.some(keypoint => keypoint.name === 'left_ear' && keypoint.score < 0.2) //||
+            // pose.keypoints.some(keypoint => keypoint.name === 'right_ear' && keypoint.score < 0.2))
+
+            ? "Some keypoints not fully visible but estimated angle is " + isNeckTiltAngleApprox90Degrees(pose).toFixed(2)
+            : "Current neck angle is " + isNeckTiltAngleApprox90Degrees(pose).toFixed(2))}
+          {!isFacingRight && (pose.keypoints.some(keypoint => keypoint.name === 'nose' && keypoint.score < 0.2) ||
+            // pose.keypoints.some(keypoint => keypoint.name === 'left_ear' && keypoint.score < 0.2) ||
             pose.keypoints.some(keypoint => keypoint.name === 'right_ear' && keypoint.score < 0.2)
             ? "Some keypoints not fully visible but estimated angle is " + isNeckTiltAngleApprox90Degrees(pose).toFixed(2)
-            : "Current neck angle is " + isNeckTiltAngleApprox90Degrees(pose).toFixed(2)}
+            : "Current neck angle is " + isNeckTiltAngleApprox90Degrees(pose).toFixed(2))}
         </td>
       </tr>
     );
@@ -403,12 +458,19 @@ function App() {
         </td>
         <td>
           {/* Add comment about confidence level if below 0.2 */}
-          {pose.keypoints.some(keypoint => keypoint.name === 'left_shoulder' && keypoint.score < 0.2) ||
+          {isFacingRight && ( // Check if facing right to apply the condition for right side
+            pose.keypoints.some(keypoint => keypoint.name === 'left_shoulder' && keypoint.score < 0.2) ||
+              pose.keypoints.some(keypoint => keypoint.name === 'left_hip' && keypoint.score < 0.2)
+              ? "Some keypoints not fully visible based on estimation angle is " + isShoulderHipKneeAngleRight(pose).toFixed(2)
+              : "Current shoulder hip knee angle is " + isShoulderHipKneeAngleRight(pose).toFixed(2)
+          )}
+          {!isFacingRight && ( // Check if facing left to apply the condition for left side
             pose.keypoints.some(keypoint => keypoint.name === 'right_shoulder' && keypoint.score < 0.2) ||
-            pose.keypoints.some(keypoint => keypoint.name === 'left_hip' && keypoint.score < 0.2) ||
-            pose.keypoints.some(keypoint => keypoint.name === 'right_hip' && keypoint.score < 0.2)
-            ? "Some keypoints not fully visible based on estimation angle is " + isShoulderHipKneeAngleRight(pose).toFixed(2)
-            : "Current shoulder hip knee angle is " + isShoulderHipKneeAngleRight(pose).toFixed(2)}
+              pose.keypoints.some(keypoint => keypoint.name === 'right_hip' && keypoint.score < 0.2)
+              ? "Some keypoints not fully visible based on estimation angle is " + isShoulderHipKneeAngleRight(pose).toFixed(2)
+              : "Current shoulder hip knee angle is " + isShoulderHipKneeAngleRight(pose).toFixed(2)
+          )}
+
         </td>
       </tr>
     );
@@ -425,14 +487,21 @@ function App() {
         </td>
         <td>
           {/* Add comment about confidence level if below 0.2 */}
-          {pose.keypoints.some(keypoint => keypoint.name === 'left_hip' && keypoint.score < 0.2) ||
+          {isFacingRight && ( // Check if facing right to apply the condition for right side
+            pose.keypoints.some(keypoint => keypoint.name === 'left_hip' && keypoint.score < 0.2) ||
+              pose.keypoints.some(keypoint => keypoint.name === 'left_knee' && keypoint.score < 0.2) ||
+              pose.keypoints.some(keypoint => keypoint.name === 'left_ankle' && keypoint.score < 0.2)
+              ? "Some keypoints not fully visible based on estimation angle is " + isHipKneeFootAngleRight(pose).toFixed(2)
+              : "Current hip knee foot angle is " + isHipKneeFootAngleRight(pose).toFixed(2)
+          )}
+          {!isFacingRight && ( // Check if facing left to apply the condition for left side
             pose.keypoints.some(keypoint => keypoint.name === 'right_hip' && keypoint.score < 0.2) ||
-            pose.keypoints.some(keypoint => keypoint.name === 'left_knee' && keypoint.score < 0.2) ||
-            pose.keypoints.some(keypoint => keypoint.name === 'right_knee' && keypoint.score < 0.2) ||
-            pose.keypoints.some(keypoint => keypoint.name === 'left_ankle' && keypoint.score < 0.2) ||
-            pose.keypoints.some(keypoint => keypoint.name === 'right_ankle' && keypoint.score < 0.2)
-            ? "Some keypoints not fully visible based on estimation angle is " + isHipKneeFootAngleRight(pose).toFixed(2)
-            : "Current hip knee foot angle is " + isHipKneeFootAngleRight(pose).toFixed(2)}
+              pose.keypoints.some(keypoint => keypoint.name === 'right_knee' && keypoint.score < 0.2) ||
+              pose.keypoints.some(keypoint => keypoint.name === 'right_ankle' && keypoint.score < 0.2)
+              ? "Some keypoints not fully visible based on estimation angle is " + isHipKneeFootAngleRight(pose).toFixed(2)
+              : "Current hip knee foot angle is " + isHipKneeFootAngleRight(pose).toFixed(2)
+          )}
+
         </td>
       </tr>
     );
@@ -449,14 +518,21 @@ function App() {
         </td>
         <td>
           {/* Add comment about confidence level if below 0.2 */}
-          {pose.keypoints.some(keypoint => keypoint.name === 'left_shoulder' && keypoint.score < 0.2) ||
+          {isFacingRight && ( // Check if facing right to apply the condition for right side
+            pose.keypoints.some(keypoint => keypoint.name === 'left_shoulder' && keypoint.score < 0.2) ||
+              pose.keypoints.some(keypoint => keypoint.name === 'left_elbow' && keypoint.score < 0.2) ||
+              pose.keypoints.some(keypoint => keypoint.name === 'left_wrist' && keypoint.score < 0.2)
+              ? "Some keypoints not fully visible but shoulder elbow wrist angle is " + calculateShoulderElbowWristAngle(pose).toFixed(2)
+              : "Shoulder elbow wrist angle is " + calculateShoulderElbowWristAngle(pose).toFixed(2)
+          )}
+          {!isFacingRight && ( // Check if facing left to apply the condition for left side
             pose.keypoints.some(keypoint => keypoint.name === 'right_shoulder' && keypoint.score < 0.2) ||
-            pose.keypoints.some(keypoint => keypoint.name === 'left_elbow' && keypoint.score < 0.2) ||
-            pose.keypoints.some(keypoint => keypoint.name === 'right_elbow' && keypoint.score < 0.2) ||
-            pose.keypoints.some(keypoint => keypoint.name === 'left_wrist' && keypoint.score < 0.2) ||
-            pose.keypoints.some(keypoint => keypoint.name === 'right_wrist' && keypoint.score < 0.2)
-            ? "Some keypoints not fully visible but shoulder elbow wrist angle is " + calculateShoulderElbowWristAngle(pose).toFixed(2)
-            : "Shoulder elbow wrist angle is " + calculateShoulderElbowWristAngle(pose).toFixed(2)}
+              pose.keypoints.some(keypoint => keypoint.name === 'right_elbow' && keypoint.score < 0.2) ||
+              pose.keypoints.some(keypoint => keypoint.name === 'right_wrist' && keypoint.score < 0.2)
+              ? "Some keypoints not fully visible but shoulder elbow wrist angle is " + calculateShoulderElbowWristAngle(pose).toFixed(2)
+              : "Shoulder elbow wrist angle is " + calculateShoulderElbowWristAngle(pose).toFixed(2)
+          )}
+
         </td>
       </tr>
     );
@@ -568,7 +644,9 @@ function App() {
                       <h2>Detected Objects</h2>
                       <ul>
                         {objects.map((object, index) => (
-                          <li key={index}>{object.class}</li>
+                          object.probability >= 0.1 && (
+                            <li key={index}>{object.className + " " + object.probability.toFixed(2)}</li>
+                          )
                         ))}
                       </ul>
                     </div>
@@ -578,10 +656,37 @@ function App() {
             </div>
           </div>
         )}
+        {image && (
+          <Dropzone onDrop={onDifferentDrop} accept="image/*">
+            {({ getRootProps, getInputProps }) => (
+              <section>
+                <div {...getRootProps()} style={differentDropzoneStyle}>
+                  <input {...getInputProps()} />
+                  <p style={differentDropzoneTextStyle}>Different Dropzone for hand processing</p>
+                </div>
+              </section>
+            )}
+          </Dropzone>
+        )}
+      </div>
+      <div>
+        {/* Your other JSX components */}
+        {handPoses && (
+          <div>
+            <h2>Detected Hand Poses</h2>
+            <ul>
+              {handPoses.map((handpose, index) => (
+                <li key={index}>{/* Display hand pose information */}</li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </div>
   );
 }
+
+
 
 const containerStyle = {
   fontFamily: 'Arial, sans-serif',
@@ -605,6 +710,19 @@ const dropzoneStyle = {
 };
 
 const dropzoneTextStyle = {
+  fontSize: '1rem',
+  color: '#555',
+};
+
+const differentDropzoneStyle = {
+  border: '2px dashed #ccc',
+  borderRadius: '5px',
+  padding: '20px',
+  cursor: 'pointer',
+  backgroundColor: 'rgba(255, 255, 255, 0.9)', // Semi-transparent white background
+};
+
+const differentDropzoneTextStyle = {
   fontSize: '1rem',
   color: '#555',
 };
